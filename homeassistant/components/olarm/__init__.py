@@ -30,9 +30,6 @@ _LOGGER = logging.getLogger(__name__)
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up olarm from a config entry."""
-    _LOGGER.debug(
-        "Setting up Olarm integration for device: %s", entry.data.get("device_id")
-    )
 
     # use oauth2 to get access token
     implementation = (
