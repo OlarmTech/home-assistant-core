@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 
 from olarmflowclient import OlarmFlowClientApiError
-import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
@@ -14,17 +13,13 @@ from homeassistant.exceptions import (
     ConfigEntryError,
     ConfigEntryNotReady,
 )
-from homeassistant.helpers import config_entry_oauth2_flow, config_validation as cv
+from homeassistant.helpers import config_entry_oauth2_flow
 from homeassistant.helpers.typing import ConfigType
 
 from .const import (
     DOMAIN,
 )
 from .coordinator import OlarmFlowClientCoordinator
-
-type OlarmConfigEntry = ConfigEntry[OlarmFlowClientCoordinator]
-
-CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 _PLATFORMS = [
     Platform.BINARY_SENSOR,
@@ -33,7 +28,7 @@ _PLATFORMS = [
 _LOGGER = logging.getLogger(__name__)
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: OlarmConfigEntry) -> bool:
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up olarm from a config entry."""
     _LOGGER.debug(
         "Setting up Olarm integration for device: %s", entry.data.get("device_id")
@@ -113,7 +108,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: OlarmConfigEntry) -> boo
     return True
 
 
-async def async_unload_entry(hass: HomeAssistant, entry: OlarmConfigEntry) -> bool:
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     coordinator = entry.runtime_data
 
