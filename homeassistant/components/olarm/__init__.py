@@ -11,7 +11,6 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import (
-    ConfigEntryAuthFailed,
     ConfigEntryError,
     ConfigEntryNotReady,
 )
@@ -81,10 +80,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: OlarmConfigEntry) -> boo
         # Temporary failures (network issues, device offline, etc.) - let Home Assistant retry
         _LOGGER.debug("Olarm setup not ready, will retry later")
         raise
-    except ConfigEntryAuthFailed:
-        # Authentication failures - Home Assistant will trigger reauthentication
-        _LOGGER.error("Olarm authentication failed")
-        raise
     except ConfigEntryError:
         # Permanent failures - setup will not be retried
         _LOGGER.error("Permanent error setting up Olarm integration")
@@ -93,7 +88,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: OlarmConfigEntry) -> boo
         # API errors that indicate authentication or permanent issues
         if "401" in str(ex) or "403" in str(ex) or "unauthorized" in str(ex).lower():
             _LOGGER.error("Olarm API authentication failed: %s", ex)
-            raise ConfigEntryAuthFailed("Invalid Olarm credentials") from ex
+            raise ConfigEntryNotReady(
+                "Invalid Olarm credentials. Please remove and re-add the integration."
+            ) from ex
         _LOGGER.warning("Olarm API error during setup: %s", ex)
         raise ConfigEntryNotReady("Olarm API temporarily unavailable") from ex
     except (OSError, ConnectionError, TimeoutError) as ex:
