@@ -30,7 +30,7 @@ async def async_setup_entry(
     _LOGGER.debug("config_entry -> %s", config_entry.data)
 
     # get coordinator
-    coordinator = config_entry.runtime_data
+    coordinator = config_entry.runtime_data.coordinators[config_entry.data["device_id"]]
 
     # cycle through zones and create binary sensors
     sensors: list[OlarmBinarySensor] = []
@@ -80,99 +80,6 @@ async def async_setup_entry(
             )
         )
 
-    # load LINK inputs and outputs / relays in latch mode
-    if (
-        coordinator.device_profile_links is not None
-        and len(coordinator.device_profile_links) > 0
-        and coordinator.device_links is not None
-    ):
-        for link_id, link_data in coordinator.device_profile_links.items():
-            link_name = link_data.get("name", "Unnamed Link")
-
-            io_items = link_data.get("io", [])
-            for io_index, io in enumerate(io_items):
-                # Only create sensors for enabled inputs
-                if io.get("enabled"):
-                    if io.get("type") == "input":
-                        sensors.append(
-                            OlarmBinarySensor(
-                                coordinator,
-                                "link_input",
-                                config_entry.data["device_id"] + "_" + link_id,
-                                io_index,
-                                coordinator.device_links[link_id]["inputs"][io_index],
-                                io.get("label"),
-                                None,
-                                link_id,
-                                link_name,
-                            )
-                        )
-                    elif io.get("type") == "output" and io.get("outputMode") == "latch":
-                        sensors.append(
-                            OlarmBinarySensor(
-                                coordinator,
-                                "link_output",
-                                config_entry.data["device_id"] + "_" + link_id,
-                                io_index,
-                                coordinator.device_links[link_id]["outputs"][io_index],
-                                io.get("label"),
-                                None,
-                                link_id,
-                                link_name,
-                            )
-                        )
-
-            relay_items = link_data.get("relays", [])
-            for relay_index, relay in enumerate(relay_items):
-                # only create sensors for enabled relays in latch mode
-                if relay.get("enabled") and relay.get("relayMode") == "latch":
-                    sensors.append(
-                        OlarmBinarySensor(
-                            coordinator,
-                            "link_relay",
-                            config_entry.data["device_id"] + "_" + link_id,
-                            relay_index,
-                            coordinator.device_links[link_id]["relays"][relay_index],
-                            relay.get("label"),
-                            None,
-                            link_id,
-                            link_name,
-                        )
-                    )
-
-    # load Max IO inputs and outputs in latch mode
-    if (
-        coordinator.device_profile_io is not None
-        and coordinator.device_profile_io.get("io") is not None
-        and coordinator.device_io is not None
-    ):
-        for io_index, io in enumerate(coordinator.device_profile_io.get("io")):
-            if io.get("enabled"):
-                if io.get("type") == "input":
-                    sensors.append(
-                        OlarmBinarySensor(
-                            coordinator,
-                            "max_input",
-                            config_entry.data["device_id"],
-                            io_index,
-                            coordinator.device_io["inputs"][io_index],
-                            io.get("label"),
-                            None,
-                        )
-                    )
-                elif io.get("type") == "output" and io.get("outputMode") == "latch":
-                    sensors.append(
-                        OlarmBinarySensor(
-                            coordinator,
-                            "max_output",
-                            config_entry.data["device_id"],
-                            io_index,
-                            coordinator.device_io["outputs"][io_index],
-                            io.get("label"),
-                            None,
-                        )
-                    )
-
     async_add_entities(sensors)
 
 
@@ -203,32 +110,10 @@ class OlarmBinarySensor(BinarySensorEntity):
         if sensor_type == "ac_power":
             self._attr_name = f"{sensor_label}"
             self._attr_unique_id = f"{device_id}.ac_power"
-        if sensor_type == "link_input":
-            self._attr_name = (
-                f"{link_name} LINK Input {sensor_index + 1:02} - {sensor_label}"
-            )
-            self._attr_unique_id = f"{device_id}.link.input.{sensor_index}"
-        if sensor_type == "link_output":
-            self._attr_name = (
-                f"{link_name} LINK Output {sensor_index + 1:02} - {sensor_label}"
-            )
-            self._attr_unique_id = f"{device_id}.link.output.{sensor_index}"
-        if sensor_type == "link_relay":
-            self._attr_name = (
-                f"{link_name} LINK Relay {sensor_index + 1:02} - {sensor_label}"
-            )
-            self._attr_unique_id = f"{device_id}.link.relay.{sensor_index}"
-        if sensor_type == "max_input":
-            self._attr_name = f"MAX Input {sensor_index + 1:02} - {sensor_label}"
-            self._attr_unique_id = f"{device_id}.max.input.{sensor_index}"
-        if sensor_type == "max_output":
-            self._attr_name = f"MAX Output {sensor_index + 1:02} - {sensor_label}"
-            self._attr_unique_id = f"{device_id}.max.output.{sensor_index}"
 
-            # Set device info - extract main device ID for LINK devices
-        main_device_id = device_id.split("_")[0]
+        # Set device info
         self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, main_device_id)},
+            identifiers={(DOMAIN, device_id)},
             name=coordinator.device_name,
             manufacturer="Olarm",
         )
@@ -265,23 +150,10 @@ class OlarmBinarySensor(BinarySensorEntity):
             (self.sensor_type == "zone" and self.sensor_state == "a")
             or (self.sensor_type == "zone_bypass" and self.sensor_state == "b")
             or (self.sensor_type == "ac_power" and self.sensor_state == "on")
-            or (
-                (self.sensor_type in {"link_input", "max_input"})
-                and self.sensor_state == "high"
-            )
-            or (
-                (self.sensor_type in {"link_output", "max_output"})
-                and self.sensor_state == "closed"
-            )
-            or ((self.sensor_type in {"link_relay"}) and self.sensor_state == "latched")
         ):
             self._attr_is_on = True
         else:
             self._attr_is_on = False
-
-        # Set extra state attributes for zone type
-        if self.sensor_type == "zone":
-            self._attr_extra_state_attributes = {"bypassed": self.sensor_state == "b"}
 
     async def async_added_to_hass(self) -> None:
         """Register the signal listener when the entity is added."""
@@ -313,41 +185,16 @@ class OlarmBinarySensor(BinarySensorEntity):
             if device_state.get("power", {}).get("AC") == "1":
                 ac_power_state = "on"
             self.sensor_state = ac_power_state
-        elif self.sensor_type == "link_input" and device_links is not None:
-            self.sensor_state = device_links.get(self.link_id).get("inputs")[
-                self.sensor_index
-            ]
-        elif self.sensor_type == "link_output" and device_links is not None:
-            self.sensor_state = device_links.get(self.link_id).get("outputs")[
-                self.sensor_index
-            ]
-        elif self.sensor_type == "max_input" and device_io is not None:
-            self.sensor_state = device_io.get("inputs")[self.sensor_index]
-        elif self.sensor_type == "max_output" and device_io is not None:
-            self.sensor_state = device_io.get("outputs")[self.sensor_index]
 
         # set state if zone is active[a] or closed[c] or bypassed[b]
         if (
             (self.sensor_type == "zone" and self.sensor_state == "a")
             or (self.sensor_type == "zone_bypass" and self.sensor_state == "b")
             or (self.sensor_type == "ac_power" and self.sensor_state == "on")
-            or (
-                (self.sensor_type in {"link_input", "max_input"})
-                and self.sensor_state == "high"
-            )
-            or (
-                (self.sensor_type in {"link_output", "max_output"})
-                and self.sensor_state == "closed"
-            )
-            or ((self.sensor_type in {"link_relay"}) and self.sensor_state == "latched")
         ):
             self._attr_is_on = True
         else:
             self._attr_is_on = False
-
-        # set extra state attributes if applicable
-        if self.sensor_type == "zone":
-            self._attr_extra_state_attributes = {"bypassed": self.sensor_state == "b"}
 
         self.schedule_update_ha_state()
 
