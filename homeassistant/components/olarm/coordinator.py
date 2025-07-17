@@ -10,6 +10,7 @@ from aiohttp import ClientResponseError
 from olarmflowclient import OlarmFlowClient, OlarmFlowClientApiError
 
 from homeassistant.core import HomeAssistant
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import config_entry_oauth2_flow
 from homeassistant.helpers.dispatcher import async_dispatcher_send
@@ -25,22 +26,21 @@ class OlarmFlowClientCoordinator:
     def __init__(
         self,
         hass: HomeAssistant,
-        user_id: str,
-        device_id: str,
-        access_token: str,
+        entry: ConfigEntry,
         oauth_session: config_entry_oauth2_flow.OAuth2Session,
+        olarm_client: OlarmFlowClient,
     ) -> None:
         """Create a new instance of the OlarmBroker."""
+
         self._hass = hass
         self._oauth_session = oauth_session
 
         # user props
-        # self._refresh_token = refresh_token
-        self._user_id = user_id
+        self._user_id = entry.data["user_id"]
 
         # device props
-        self.device_id = device_id
-        self.device_name = f"Olarm Device {device_id}"
+        self.device_id = entry.data["device_id"]
+        self.device_name = f"Olarm Device {self.device_id}"
         self.device_state = None
         self.device_links = None
         self.device_io = None
@@ -49,7 +49,17 @@ class OlarmFlowClientCoordinator:
         self.device_profile_io = None
 
         # olarm connect client
-        self._olarm_connect_client = OlarmFlowClient(access_token)
+        self._olarm_connect_client = olarm_client
+
+    async def async_setup(self) -> None:
+        """Set up the coordinator; fetch device info and connect to MQTT."""
+        # Fetch device information
+        _LOGGER.debug("Fetching device information from Olarm API")
+        await self.get_device()
+
+        # Connect to MQTT
+        _LOGGER.debug("Connecting to Olarm MQTT service")
+        await self.init_mqtt()
 
     async def _ensure_valid_token(self):
         """Ensure the access token is valid and refresh if needed."""
