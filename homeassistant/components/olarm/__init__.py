@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from olarmflowclient import OlarmFlowClientApiError
+from olarmflowclient import OlarmFlowClient, OlarmFlowClientApiError
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
@@ -43,24 +43,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         session.token["expires_at"],
     )
 
+    # Create Olarm API client
+    olarm_client = OlarmFlowClient(session.token["access_token"])
+
     try:
         # setup Olarm Connect coordinator
-        coordinator = await hass.async_add_executor_job(
-            OlarmFlowClientCoordinator,
+        coordinator = OlarmFlowClientCoordinator(
             hass,
-            entry.data["user_id"],
-            entry.data["device_id"],
-            session.token["access_token"],
+            entry,
             session,
+            olarm_client,
         )
 
-        # fetch device
-        _LOGGER.debug("Fetching device information from Olarm API")
-        await coordinator.get_device()
-
-        # connect to MQTT
-        _LOGGER.debug("Connecting to Olarm MQTT service")
-        await coordinator.init_mqtt()
+        # start coordinator (fetch device and connect to MQTT)
+        await coordinator.async_setup()
 
         # store coordinator in entry.runtime_data
         entry.runtime_data = coordinator
