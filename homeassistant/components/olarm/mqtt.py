@@ -16,7 +16,7 @@ from homeassistant.helpers import config_entry_oauth2_flow
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 
 from .const import DOMAIN
-from .coordinator import OlarmFlowClientCoordinator
+from .coordinator import OlarmDataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -30,7 +30,7 @@ class OlarmFlowClientMQTT:
         entry: ConfigEntry,
         oauth_session: config_entry_oauth2_flow.OAuth2Session,
         olarm_client: OlarmFlowClient,
-        coordinator: OlarmFlowClientCoordinator,
+        coordinator: OlarmDataUpdateCoordinator,
     ) -> None:
         """Create a new instance of the OlarmBroker."""
 
@@ -52,8 +52,6 @@ class OlarmFlowClientMQTT:
             token_valid = self._oauth_session.valid_token
             if not token_valid:
                 _LOGGER.debug("Access token expired, refreshing")
-            else:
-                _LOGGER.debug("Access token is still valid")
 
             await self._oauth_session.async_ensure_token_valid()
             new_token = self._oauth_session.token["access_token"]
