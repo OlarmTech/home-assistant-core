@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 import logging
 
 from homeassistant.components.binary_sensor import (
     BinarySensorDeviceClass,
     BinarySensorEntity,
 )
-from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
@@ -26,13 +27,19 @@ async def async_setup_entry(
 ) -> None:
     """Add binary sensors for a config entry."""
 
-    _LOGGER.debug("config_entry -> %s", config_entry.data)
-
     # get coordinator
-    coordinator = config_entry.runtime_data.coordinators[config_entry.data["device_id"]]
+    coordinator = config_entry.runtime_data.coordinator
 
-    # cycle through zones and create binary sensors
+    # load binary sensors
     sensors: list[OlarmBinarySensor] = []
+    load_zone_sensors(coordinator, config_entry, sensors)
+    load_ac_power_sensor(coordinator, config_entry, sensors)
+
+    async_add_entities(sensors)
+
+
+def load_zone_sensors(coordinator, config_entry, sensors):
+    """Load zone sensors and optionally bypass sensors."""
     if coordinator.device_profile is not None and coordinator.device_state is not None:
         for zone_index, zone_state in enumerate(coordinator.device_state.get("zones")):
             sensors.append(
@@ -60,7 +67,9 @@ async def async_setup_entry(
                     )
                 )
 
-    # setup binary sensor for AC power
+
+def load_ac_power_sensor(coordinator, config_entry, sensors):
+    """Load AC power sensor."""
     if coordinator.device_state is not None:
         ac_power_state = "off"
         if coordinator.device_state.get("powerAC") == "ok":
@@ -78,8 +87,6 @@ async def async_setup_entry(
                 None,
             )
         )
-
-    async_add_entities(sensors)
 
 
 class OlarmBinarySensor(BinarySensorEntity):
@@ -174,6 +181,9 @@ class OlarmBinarySensor(BinarySensorEntity):
         if device_id != self.device_id:
             return
 
+        # Store the previous state to check if it changed
+        previous_state = self._attr_is_on
+
         # update state
         if (self.sensor_type in {"zone", "zone_bypass"}) and device_state is not None:
             self.sensor_state = device_state.get("zones")[self.sensor_index]
@@ -195,7 +205,9 @@ class OlarmBinarySensor(BinarySensorEntity):
         else:
             self._attr_is_on = False
 
-        self.schedule_update_ha_state()
+        # Only schedule state update if the state actually changed
+        if self._attr_is_on != previous_state:
+            self.schedule_update_ha_state()
 
     @property
     def name(self) -> str | None:

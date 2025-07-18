@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-
 import logging
+from dataclasses import dataclass
 
 from aiohttp import ClientError, ClientResponseError
-from olarmflowclient import OlarmFlowClient, OlarmFlowClientApiError
+from olarmflowclient import OlarmFlowClient
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
@@ -20,10 +19,8 @@ from homeassistant.exceptions import (
 from homeassistant.helpers import config_entry_oauth2_flow
 from homeassistant.helpers.typing import ConfigType
 
-from .const import (
-    DOMAIN,
-)
-from .coordinator import OlarmFlowClientCoordinator
+from .const import DOMAIN
+from .coordinator import OlarmDataUpdateCoordinator
 from .mqtt import OlarmFlowClientMQTT
 
 
@@ -31,7 +28,7 @@ from .mqtt import OlarmFlowClientMQTT
 class OlarmData:
     """A class that holds runtime data."""
 
-    coordinators: dict[str, OlarmFlowClientCoordinator] = field(default_factory=dict)
+    coordinator: OlarmDataUpdateCoordinator | None = None
     mqtt_client: OlarmFlowClientMQTT | None = None
 
 
@@ -70,13 +67,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     olarm_client = OlarmFlowClient(session.token["access_token"])
 
     # setup coordinator
-    coordinator = OlarmFlowClientCoordinator(
+    coordinator = OlarmDataUpdateCoordinator(
         hass,
         entry,
         session,
         olarm_client,
     )
-    entry.runtime_data.coordinators[coordinator.device_id] = coordinator
+    entry.runtime_data.coordinator = coordinator
 
     # Fetch initial data using DataUpdateCoordinator pattern
     await coordinator.async_config_entry_first_refresh()
