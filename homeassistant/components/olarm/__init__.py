@@ -78,6 +78,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
     entry.runtime_data.coordinators[coordinator.device_id] = coordinator
 
+    # Fetch initial data using DataUpdateCoordinator pattern
+    await coordinator.async_config_entry_first_refresh()
+
     # setup and start mqtt
     mqtt_client = OlarmFlowClientMQTT(
         hass,

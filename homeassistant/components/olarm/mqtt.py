@@ -16,6 +16,7 @@ from homeassistant.helpers import config_entry_oauth2_flow
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 
 from .const import DOMAIN
+from .coordinator import OlarmFlowClientCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
