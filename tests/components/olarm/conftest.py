@@ -6,23 +6,24 @@ from homeassistant.components.application_credentials import (
     ClientCredential,
     async_import_client_credential,
 )
-from homeassistant.components.olarm.const import DOMAIN
+from homeassistant.components.olarm.const import (
+    DOMAIN,
+    OAUTH2_CLIENT_ID,
+    OAUTH2_CLIENT_SECRET,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.setup import async_setup_component
-
-from .const import CLIENT_ID, CLIENT_SECRET
 
 
 @pytest.fixture(autouse=True)
 async def setup_credentials(hass: HomeAssistant) -> None:
     """Ensure the application credentials are registered for each test."""
-    # Load the `application_credentials` integration so that the OAuth2 flow
-    # can find the client id/secret we register below.
+    # Load the `application_credentials` integration
     assert await async_setup_component(hass, "application_credentials", {})
 
-    # Register the client credentials used by the public Olarm OAuth client.
+    # Register the client credentials for Olarm OAuth
     await async_import_client_credential(
         hass,
         DOMAIN,
-        ClientCredential(CLIENT_ID, CLIENT_SECRET),
+        ClientCredential(OAUTH2_CLIENT_ID, OAUTH2_CLIENT_SECRET, name="Olarm"),
     )

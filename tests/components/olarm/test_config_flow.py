@@ -1,7 +1,6 @@
 """Test the Olarm config flow."""
 
-# pylint: disable=line-too-long
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from olarmflowclient import OlarmFlowClientApiError
 import pytest
@@ -57,12 +56,11 @@ async def test_full_flow(
 
     with patch(
         "homeassistant.components.olarm.config_flow.OlarmFlowClient"
-    ) as mock_olarm_connect:
-        # Mock the get_devices method
-        async def mock_get_devices():
-            return MOCK_DEVICES_RESPONSE
-
-        mock_olarm_connect.return_value.get_devices = mock_get_devices
+    ) as mock_olarm_client:
+        # Mock the get_devices method to be async
+        mock_client_instance = AsyncMock()
+        mock_client_instance.get_devices = AsyncMock(return_value=MOCK_DEVICES_RESPONSE)
+        mock_olarm_client.return_value = mock_client_instance
 
         result2 = await hass.config_entries.flow.async_configure(result["flow_id"])
 
@@ -70,14 +68,12 @@ async def test_full_flow(
         assert result2.get("type") is FlowResultType.FORM
         assert result2.get("step_id") == "device"
 
-        # Mock the coordinator methods to prevent network calls during setup
+        # Mock the setup components to prevent network calls during entry creation
         with (
             patch(
-                "homeassistant.components.olarm.coordinator.OlarmFlowClientCoordinator.get_device"
+                "homeassistant.components.olarm.OlarmDataUpdateCoordinator.async_config_entry_first_refresh"
             ),
-            patch(
-                "homeassistant.components.olarm.coordinator.OlarmFlowClientCoordinator.init_mqtt"
-            ),
+            patch("homeassistant.components.olarm.mqtt.OlarmFlowClientMQTT.init_mqtt"),
         ):
             # Complete the device selection
             result3 = await hass.config_entries.flow.async_configure(
@@ -173,15 +169,17 @@ async def test_api_error(
 
     with patch(
         "homeassistant.components.olarm.config_flow.OlarmFlowClient"
-    ) as mock_olarm_connect:
+    ) as mock_olarm_client:
         # Mock API error
-        mock_olarm_connect.return_value.get_devices.side_effect = (
-            OlarmFlowClientApiError("API Error")
+        mock_client_instance = AsyncMock()
+        mock_client_instance.get_devices = AsyncMock(
+            side_effect=OlarmFlowClientApiError("API Error")
         )
+        mock_olarm_client.return_value = mock_client_instance
 
         result2 = await hass.config_entries.flow.async_configure(result["flow_id"])
-        assert result2.get("type") == "form"
-        assert (result2.get("errors") or {}).get("base") == "invalid_auth"
+        assert result2.get("type") == FlowResultType.FORM
+        assert result2.get("errors", {}).get("base") == "invalid_auth"
 
 
 @pytest.mark.usefixtures("current_request_with_host")
@@ -218,16 +216,17 @@ async def test_no_devices_found(
 
     with patch(
         "homeassistant.components.olarm.config_flow.OlarmFlowClient"
-    ) as mock_olarm_connect:
+    ) as mock_olarm_client:
         # Mock empty devices response
-        async def mock_get_devices():
-            return {
+        mock_client_instance = AsyncMock()
+        mock_client_instance.get_devices = AsyncMock(
+            return_value={
                 "userId": "test-user",
                 "data": None,
             }
-
-        mock_olarm_connect.return_value.get_devices = mock_get_devices
+        )
+        mock_olarm_client.return_value = mock_client_instance
 
         result2 = await hass.config_entries.flow.async_configure(result["flow_id"])
-        assert result2.get("type") == "abort"
+        assert result2.get("type") == FlowResultType.ABORT
         assert result2.get("reason") == "no_devices_found"
