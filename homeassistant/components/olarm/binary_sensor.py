@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 import logging
 
 from homeassistant.components.binary_sensor import (
@@ -10,12 +9,10 @@ from homeassistant.components.binary_sensor import (
     BinarySensorEntity,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers.device_registry import DeviceInfo
-from homeassistant.helpers.dispatcher import async_dispatcher_connect
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .const import DOMAIN
+from .entity import OlarmEntity
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -89,7 +86,7 @@ def load_ac_power_sensor(coordinator, config_entry, sensors):
         )
 
 
-class OlarmBinarySensor(BinarySensorEntity):
+class OlarmBinarySensor(OlarmEntity, BinarySensorEntity):
     """Define a SmartThings Binary Sensor."""
 
     def __init__(
@@ -106,8 +103,10 @@ class OlarmBinarySensor(BinarySensorEntity):
     ) -> None:
         """Init the class."""
 
+        # Initialize base entity
+        super().__init__(coordinator, device_id)
+
         # set attributes
-        self._attr_has_entity_name = True
         self._attr_name = f"Zone {sensor_index + 1:03} - {sensor_label}"
         self._attr_unique_id = f"{device_id}.zone.{sensor_index}"
         if sensor_type == "zone_bypass":
@@ -116,13 +115,6 @@ class OlarmBinarySensor(BinarySensorEntity):
         if sensor_type == "ac_power":
             self._attr_name = f"{sensor_label}"
             self._attr_unique_id = f"{device_id}.ac_power"
-
-        # Set device info
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, device_id)},
-            name=coordinator.device_name,
-            manufacturer="Olarm",
-        )
 
         _LOGGER.debug(
             "BinarySensor: init %s -> %s -> %s",
@@ -141,7 +133,6 @@ class OlarmBinarySensor(BinarySensorEntity):
 
         # custom attributes
         self.sensor_type = sensor_type
-        self.device_id = device_id
         self.sensor_index = sensor_index
         self.sensor_state = sensor_state
         self.sensor_label = sensor_label
@@ -149,7 +140,6 @@ class OlarmBinarySensor(BinarySensorEntity):
         self.link_id = (
             link_id  # only used for olarm LINKs to track which LINK as can have upto 8
         )
-        self._unsubscribe_dispatcher: Callable[[], None] | None = None
 
         # set state if zone is active[a] or closed[c] or bypassed[b]
         if (
@@ -161,25 +151,14 @@ class OlarmBinarySensor(BinarySensorEntity):
         else:
             self._attr_is_on = False
 
-    async def async_added_to_hass(self) -> None:
-        """Register the signal listener when the entity is added."""
-        await super().async_added_to_hass()
-        self._unsubscribe_dispatcher = async_dispatcher_connect(
-            self.hass, "olarm_mqtt_update", self._handle_mqtt_update
-        )
-
-    async def async_will_remove_from_hass(self) -> None:
-        """Unsubscribe from dispatcher when entity is removed."""
-        if self._unsubscribe_dispatcher:
-            self._unsubscribe_dispatcher()
-        await super().async_will_remove_from_hass()
-
-    def _handle_mqtt_update(self, device_id, device_state, device_links, device_io):
-        """Handle state updates from MQTT messages."""
-
-        # check if the device_id is the same as the device_id
-        if device_id != self.device_id:
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        if not self.coordinator.data:
             return
+
+        # Extract the data from coordinator
+        device_state = self.coordinator.data.device_state
 
         # Store the previous state to check if it changed
         previous_state = self._attr_is_on

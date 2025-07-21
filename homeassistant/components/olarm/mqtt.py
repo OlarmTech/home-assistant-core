@@ -7,13 +7,13 @@ import logging
 import ssl
 
 from aiohttp import ClientResponseError
-from olarmflowclient import OlarmFlowClient, OlarmFlowClientApiError
+from olarmflowclient import OlarmFlowClient
 
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import config_entry_oauth2_flow
-from homeassistant.helpers.dispatcher import async_dispatcher_send
+
 
 from .const import DOMAIN
 from .coordinator import OlarmDataUpdateCoordinator
@@ -161,41 +161,9 @@ class OlarmFlowClientMQTT:
     def mqtt_message_callback(self, topic, payload):
         """Handle incoming MQTT messages."""
         _LOGGER.debug("MQTT message received: topic = %s, payload = %s", topic, payload)
-
-        # only update if there is new state in the payload
-        flagDispatch = False
-
-        # save state
-        if "deviceState" in payload:
-            self._coordinator.device_state = payload["deviceState"]
-            flagDispatch = True
-        if "deviceLinks" in payload:
-            self._coordinator.device_links = payload["deviceLinks"]
-            flagDispatch = True
-        if "deviceIO" in payload:
-            self._coordinator.device_io = payload["deviceIO"]
-            flagDispatch = True
-
-        # send update to dispatcher
-        if flagDispatch:
-            self._hass.loop.call_soon_threadsafe(
-                async_dispatcher_send,
-                self._hass,
-                "olarm_mqtt_update",
-                self.device_id,
-                self._coordinator.device_state,
-                self._coordinator.device_links,
-                self._coordinator.device_io,
-            )
-
-    async def async_refresh_token(self):
-        """Manually refresh the access token."""
-        try:
-            await self._ensure_valid_token()
-            _LOGGER.debug("Access token refreshed successfully")
-        except Exception as e:
-            _LOGGER.error("Failed to refresh access token: %s", e)
-            raise
+        self._hass.loop.call_soon_threadsafe(
+            self._coordinator.async_update_from_mqtt, payload
+        )
 
     async def async_stop(self):
         """Stop and clean up MQTT and API client connections."""
