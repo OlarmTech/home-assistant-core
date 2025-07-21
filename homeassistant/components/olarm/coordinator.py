@@ -2,18 +2,14 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
-import ssl
 from dataclasses import dataclass
 from typing import Any
 
-from aiohttp import ClientResponseError
 from olarmflowclient import OlarmFlowClient, OlarmFlowClientApiError
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import config_entry_oauth2_flow
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
@@ -71,13 +67,8 @@ class OlarmDataUpdateCoordinator(DataUpdateCoordinator[OlarmDeviceData]):
         """Fetch device information from the Olarm API."""
         try:
             device = await self._olarm_connect_client.get_device(self.device_id)
-
-            _LOGGER.debug("Device -> %s", device)
-
-            device_name = device.get("deviceName") or f"Olarm Device {self.device_id}"
-
             device_data = OlarmDeviceData(
-                device_name=device_name,
+                device_name=device.get("deviceName") or "Olarm Device",
                 device_state=device.get("deviceState"),
                 device_links=device.get("deviceLinks"),
                 device_io=device.get("deviceIO"),
@@ -99,10 +90,24 @@ class OlarmDataUpdateCoordinator(DataUpdateCoordinator[OlarmDeviceData]):
         except OlarmFlowClientApiError as e:
             raise UpdateFailed("Failed to reach Olarm API") from e
 
-    def _update_coordinator_data(self):
-        """Update coordinator data when properties change."""
-        if self.data:
-            # Update the coordinator with the current data
+    def async_update_from_mqtt(self, payload):
+        """Update coordinator data from an MQTT payload."""
+        if not self.data:
+            return
+
+        updated = False
+
+        if "deviceState" in payload:
+            self.data.device_state = payload["deviceState"]
+            updated = True
+        if "deviceLinks" in payload:
+            self.data.device_links = payload["deviceLinks"]
+            updated = True
+        if "deviceIO" in payload:
+            self.data.device_io = payload["deviceIO"]
+            updated = True
+
+        if updated:
             self.async_set_updated_data(self.data)
 
     # Settable properties for backward compatibility with MQTT updates
@@ -116,36 +121,15 @@ class OlarmDataUpdateCoordinator(DataUpdateCoordinator[OlarmDeviceData]):
         """Return the device state."""
         return self.data.device_state if self.data else None
 
-    @device_state.setter
-    def device_state(self, value: dict[str, Any] | None) -> None:
-        """Set the device state and update coordinator."""
-        if self.data:
-            self.data.device_state = value
-            self._update_coordinator_data()
-
     @property
     def device_links(self) -> dict[str, Any] | None:
         """Return the device links."""
         return self.data.device_links if self.data else None
 
-    @device_links.setter
-    def device_links(self, value: dict[str, Any] | None) -> None:
-        """Set the device links and update coordinator."""
-        if self.data:
-            self.data.device_links = value
-            self._update_coordinator_data()
-
     @property
     def device_io(self) -> dict[str, Any] | None:
-        """Return the device IO."""
+        """Return the device io."""
         return self.data.device_io if self.data else None
-
-    @device_io.setter
-    def device_io(self, value: dict[str, Any] | None) -> None:
-        """Set the device IO and update coordinator."""
-        if self.data:
-            self.data.device_io = value
-            self._update_coordinator_data()
 
     @property
     def device_profile(self) -> dict[str, Any] | None:
