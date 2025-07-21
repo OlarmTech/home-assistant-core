@@ -2,10 +2,11 @@
 
 from unittest.mock import AsyncMock, patch
 
-from olarmflowclient import OlarmFlowClientApiError
+from aiohttp import ClientError, ClientResponseError
 
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.update_coordinator import UpdateFailed
 
 from tests.common import MockConfigEntry
 
@@ -30,14 +31,20 @@ async def test_setup_entry_success(hass: HomeAssistant) -> None:
 
     with (
         patch(
-            "homeassistant.components.olarm.coordinator.OlarmFlowClientCoordinator.get_device"
-        ) as mock_get_device,
-        patch(
-            "homeassistant.components.olarm.coordinator.OlarmFlowClientCoordinator.init_mqtt"
-        ) as mock_init_mqtt,
+            "homeassistant.helpers.config_entry_oauth2_flow.async_get_config_entry_implementation"
+        ),
         patch(
             "homeassistant.helpers.config_entry_oauth2_flow.OAuth2Session"
         ) as mock_session,
+        patch(
+            "homeassistant.components.olarm.OlarmDataUpdateCoordinator.async_config_entry_first_refresh"
+        ) as mock_first_refresh,
+        patch(
+            "homeassistant.components.olarm.mqtt.OlarmFlowClientMQTT.init_mqtt"
+        ) as mock_init_mqtt,
+        patch(
+            "homeassistant.components.olarm.mqtt.OlarmFlowClientMQTT.async_stop"
+        ) as mock_stop_mqtt,
     ):
         mock_session_instance = AsyncMock()
         mock_session_instance.token = {
@@ -51,15 +58,15 @@ async def test_setup_entry_success(hass: HomeAssistant) -> None:
         await hass.async_block_till_done()
 
         assert config_entry.state is ConfigEntryState.LOADED
-        mock_get_device.assert_called_once()
+        mock_first_refresh.assert_called_once()
         mock_init_mqtt.assert_called_once()
 
         # Test unload
         await hass.config_entries.async_unload(config_entry.entry_id)
         await hass.async_block_till_done()
 
-        # Ignore mypy false-positive on state comparison overlap
-        assert config_entry.state is ConfigEntryState.NOT_LOADED  # type: ignore[comparison-overlap]
+        assert config_entry.state is ConfigEntryState.NOT_LOADED
+        mock_stop_mqtt.assert_called_once()
 
 
 async def test_setup_entry_auth_failed(hass: HomeAssistant) -> None:
@@ -69,7 +76,6 @@ async def test_setup_entry_auth_failed(hass: HomeAssistant) -> None:
         data={
             "user_id": "test-user-id",
             "device_id": "test-device-id",
-            "load_zones_bypass_entities": False,
             "auth_implementation": "olarm",
             "token": {
                 "access_token": "invalid-token",
@@ -82,43 +88,32 @@ async def test_setup_entry_auth_failed(hass: HomeAssistant) -> None:
 
     with (
         patch(
-            "homeassistant.components.olarm.coordinator.OlarmFlowClientCoordinator.get_device"
-        ) as mock_get_device,
-        patch(
             "homeassistant.helpers.config_entry_oauth2_flow.async_get_config_entry_implementation"
         ),
         patch(
             "homeassistant.helpers.config_entry_oauth2_flow.OAuth2Session"
         ) as mock_session,
-        # Prevent reauth flow from starting during test
-        patch("homeassistant.config_entries.ConfigEntry.async_start_reauth"),
     ):
         mock_session_instance = AsyncMock()
-        mock_session_instance.token = {
-            "access_token": "invalid-token",
-            "expires_at": 9999999999,
-        }
+        mock_session_instance.async_ensure_token_valid.side_effect = (
+            ClientResponseError(None, None, status=401, message="Unauthorized")
+        )
         mock_session.return_value = mock_session_instance
 
-        # Simulate API auth error
-        mock_get_device.side_effect = OlarmFlowClientApiError("401 Unauthorized")
-
-        # Setup should complete but entry should be in setup_error state
+        # Setup should raise ConfigEntryAuthFailed
         await hass.config_entries.async_setup(config_entry.entry_id)
         await hass.async_block_till_done()
 
-        # The entry should be in an error state due to auth failure
-        assert config_entry.state.name in ["SETUP_ERROR", "SETUP_RETRY"]
+        assert config_entry.state is ConfigEntryState.SETUP_ERROR
 
 
 async def test_setup_entry_not_ready(hass: HomeAssistant) -> None:
-    """Test setup when API is temporarily unavailable."""
+    """Test setup when network is temporarily unavailable."""
     config_entry = MockConfigEntry(
         domain="olarm",
         data={
             "user_id": "test-user-id",
             "device_id": "test-device-id",
-            "load_zones_bypass_entities": False,
             "auth_implementation": "olarm",
             "token": {
                 "access_token": "test-access-token",
@@ -131,14 +126,53 @@ async def test_setup_entry_not_ready(hass: HomeAssistant) -> None:
 
     with (
         patch(
-            "homeassistant.components.olarm.coordinator.OlarmFlowClientCoordinator.get_device"
-        ) as mock_get_device,
+            "homeassistant.helpers.config_entry_oauth2_flow.async_get_config_entry_implementation"
+        ),
+        patch(
+            "homeassistant.helpers.config_entry_oauth2_flow.OAuth2Session"
+        ) as mock_session,
+    ):
+        mock_session_instance = AsyncMock()
+        mock_session_instance.async_ensure_token_valid.side_effect = ClientError(
+            "Connection timeout"
+        )
+        mock_session.return_value = mock_session_instance
+
+        # Setup should raise ConfigEntryNotReady
+        await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        assert config_entry.state is ConfigEntryState.SETUP_RETRY
+
+
+async def test_coordinator_update_failed(hass: HomeAssistant) -> None:
+    """Test coordinator update failure."""
+    config_entry = MockConfigEntry(
+        domain="olarm",
+        data={
+            "user_id": "test-user-id",
+            "device_id": "test-device-id",
+            "auth_implementation": "olarm",
+            "token": {
+                "access_token": "test-access-token",
+                "refresh_token": "test-refresh-token",
+                "expires_at": 9999999999,
+            },
+        },
+    )
+    config_entry.add_to_hass(hass)
+
+    with (
         patch(
             "homeassistant.helpers.config_entry_oauth2_flow.async_get_config_entry_implementation"
         ),
         patch(
             "homeassistant.helpers.config_entry_oauth2_flow.OAuth2Session"
         ) as mock_session,
+        patch(
+            "homeassistant.components.olarm.OlarmDataUpdateCoordinator.async_config_entry_first_refresh"
+        ) as mock_first_refresh,
+        patch("homeassistant.components.olarm.mqtt.OlarmFlowClientMQTT.init_mqtt"),
     ):
         mock_session_instance = AsyncMock()
         mock_session_instance.token = {
@@ -147,12 +181,10 @@ async def test_setup_entry_not_ready(hass: HomeAssistant) -> None:
         }
         mock_session.return_value = mock_session_instance
 
-        # Simulate network error
-        mock_get_device.side_effect = OlarmFlowClientApiError("Connection timeout")
+        # Simulate coordinator update failure
+        mock_first_refresh.side_effect = UpdateFailed("Coordinator update failed")
 
-        # Setup should complete but config entry should be in setup_retry state
         await hass.config_entries.async_setup(config_entry.entry_id)
         await hass.async_block_till_done()
 
-        # The entry should be in setup_retry state due to temporary failure
-        assert config_entry.state.name == "SETUP_RETRY"
+        assert config_entry.state is ConfigEntryState.SETUP_ERROR
