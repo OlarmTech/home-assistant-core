@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
+import logging
 
 from aiohttp import ClientError, ClientResponseError
 from olarmflowclient import OlarmFlowClient
@@ -11,15 +11,9 @@ from olarmflowclient import OlarmFlowClient
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import (
-    ConfigEntryAuthFailed,
-    ConfigEntryError,
-    ConfigEntryNotReady,
-)
+from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers import config_entry_oauth2_flow
-from homeassistant.helpers.typing import ConfigType
 
-from .const import DOMAIN
 from .coordinator import OlarmDataUpdateCoordinator
 from .mqtt import OlarmFlowClientMQTT
 

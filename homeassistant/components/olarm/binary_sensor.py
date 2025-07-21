@@ -38,7 +38,9 @@ async def async_setup_entry(
 def load_zone_sensors(coordinator, config_entry, sensors):
     """Load zone sensors and optionally bypass sensors."""
     if coordinator.device_profile is not None and coordinator.device_state is not None:
-        for zone_index, zone_state in enumerate(coordinator.device_state.get("zones")):
+        for zone_index, zone_state in enumerate(
+            coordinator.device_state.get("zones", [])
+        ):
             sensors.append(
                 OlarmBinarySensor(
                     coordinator,
@@ -165,7 +167,7 @@ class OlarmBinarySensor(OlarmEntity, BinarySensorEntity):
 
         # update state
         if (self.sensor_type in {"zone", "zone_bypass"}) and device_state is not None:
-            self.sensor_state = device_state.get("zones")[self.sensor_index]
+            self.sensor_state = device_state.get("zones", [])[self.sensor_index]
         elif self.sensor_type == "ac_power" and device_state is not None:
             ac_power_state = "off"
             if device_state.get("powerAC") == "ok":

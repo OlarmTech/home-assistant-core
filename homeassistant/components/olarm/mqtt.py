@@ -9,11 +9,10 @@ import ssl
 from aiohttp import ClientResponseError
 from olarmflowclient import OlarmFlowClient
 
-from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import config_entry_oauth2_flow
-
 
 from .const import DOMAIN
 from .coordinator import OlarmDataUpdateCoordinator
