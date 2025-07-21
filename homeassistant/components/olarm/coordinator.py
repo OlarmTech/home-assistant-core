@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
+import logging
 from typing import Any
 
 from olarmflowclient import OlarmFlowClient, OlarmFlowClientApiError
@@ -85,10 +85,10 @@ class OlarmDataUpdateCoordinator(DataUpdateCoordinator[OlarmDeviceData]):
                 },
             )
 
-            return device_data
-
         except OlarmFlowClientApiError as e:
             raise UpdateFailed("Failed to reach Olarm API") from e
+        else:
+            return device_data
 
     def async_update_from_mqtt(self, payload):
         """Update coordinator data from an MQTT payload."""
